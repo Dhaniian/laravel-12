@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use App\Models\User;
+use Illuminate\Support\Facades\Hash;
 
 class UserSeeder extends Seeder
 {
@@ -17,10 +18,10 @@ class UserSeeder extends Seeder
             [
                 'nama' => 'iqbal',
                 'alamat' => 'Jl Imam Bonjol',
-                'no_hp' => '0101010',
+                'no_hp' => '08101010',
                 'role' => 'dokter',
                 'email' => 'iqbalgamteng@gmail.com',
-                'password' => 'password', // Fixed spelling here
+                'password' => Hash::make('password'),
             ],
             [
                 'nama' => 'alex',
@@ -28,7 +29,7 @@ class UserSeeder extends Seeder
                 'no_hp' => '08181818',
                 'role' => 'dokter',
                 'email' => 'alexgamteng@gmail.com',
-                'password' => 'password', // Fixed spelling here
+                'password' => Hash::make('alex123'),
             ],
             [
                 'nama' => 'damni',
@@ -36,7 +37,7 @@ class UserSeeder extends Seeder
                 'no_hp' => '08212188181',
                 'role' => 'pasien',
                 'email' => 'damnigamteng@gmail.com',
-                'password' => 'password', // Fixed spelling here
+                'password' => Hash::make('dhani123'),
             ],
             [
                 'nama' => 'mamank',
@@ -44,19 +45,21 @@ class UserSeeder extends Seeder
                 'no_hp' => '089191919',
                 'role' => 'pasien',
                 'email' => 'mamankgamteng@gmail.com',
-                'password' => 'password', // Fixed spelling here
+                'password' => Hash::make('password'),
             ]
         ];
         
         foreach($data as $d){
-            User::create([
-                'nama' => $d['nama'],
-                'email' => $d['email'],
-                'password' => $d['password'],
-                'alamat' => $d['alamat'],
-                'no_hp' => $d['no_hp'],
-                'role' => $d['role']
-            ]);
+            User::updateOrCreate(
+                ['email' => $d['email']], // Search by this field
+                [
+                    'nama' => $d['nama'],
+                    'password' => $d['password'],
+                    'alamat' => $d['alamat'],
+                    'no_hp' => $d['no_hp'],
+                    'role' => $d['role']
+                ]
+            );
         }
     }
 }

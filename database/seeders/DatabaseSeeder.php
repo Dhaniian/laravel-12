@@ -24,10 +24,10 @@ class DatabaseSeeder extends Seeder
         ]);*/
 
         $this->call([
-            UserSeeder::class,
-            PeriksaSeeder::class,
-            ObatSeeder::class,
-            DetailPeriksaSeeder::class,
+            // UserSeeder::class,
+           // PeriksaSeeder::class,
+           // ObatSeeder::class,
+           // DetailPeriksaSeeder::class,
 
         ]);
     }
