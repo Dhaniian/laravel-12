@@ -1,38 +1,52 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\ObatController;
-use App\Http\Controllers\AuthController;
 use App\Http\Controllers\DokterController;
+use App\Http\Controllers\PasienController;
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AuthController;
 
 
 Route::get('/', function () {
-    return view('layouts.login');
+    return redirect()->route('login');
 });
-Route::get('/dokter', function () {
-    return view('layouts/list-dokter');
-});
-// Public routes
-Route::get('/', function () {
-    return view('layouts.login');
-});
-Route::get('/login', [AuthController::class, 'form'])->name('login');
-Route::post('/login', [AuthController::class, 'authenticate']);
+
+
+Route::get('/login', function () {
+    return view('auth.login');
+})->name('login');
+Route::post('/login', [AuthController::class, 'login']);
+
+
+Route::get('/register', function () {
+    return view('auth.register');
+})->name('register');
+Route::post('/register', [AuthController::class, 'register']);
 Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 
-// Protected routes for dokter
-Route::middleware(['auth','role:dokter'])->group(function () {
-    Route::get('/obat', [ObatController::class, 'index'])->name('obat.index');
-    Route::get('/obat/{id}/edit', [ObatController::class, 'edit'])->name('obat.edit');
-    Route::put('/obat/{id}', [ObatController::class, 'update'])->name('obat.update');
-    Route::post('/obat', [ObatController::class, 'store'])->name('obat.store');
-    Route::get('/obat/create', [ObatController::class, 'create'])->name('obat.create');
-    Route::delete('/obat/{id}', [ObatController::class, 'destroy'])->name('obat.destroy');
-    // Doctor can also see doctor listing
-    Route::get('/dokter', [DokterController::class, 'index'])->name('dokter.dokter-view');
-});
+Route::middleware(['auth'])->group(function () {
 
-// Protected routes for pasien
-Route::middleware(['auth','role:pasien'])->group(function () {
-    Route::get('/dokter', [DokterController::class, 'index'])->name('dokter.index');
+
+    Route::middleware('role:pasien')->prefix('pasien')->name('pasien.')->group(function () {
+        Route::get('/dashboard', [PasienController::class, 'pasienDashboard'])->name('dashboard');
+        Route::get('/periksa', [PasienController::class, 'showPeriksaForm'])->name('periksa');
+        Route::post('/periksa', [PasienController::class, 'createPeriksa']);
+        Route::get('/riwayat', [PasienController::class, 'showRiwayat'])->name('riwayat');
+    });
+
+
+    Route::middleware('role:dokter')->prefix('dokter')->name('dokter.')->group(function () {
+
+        Route::get('/dashboard', [DokterController::class, 'dokterDashboard'])->name('dashboard');
+
+        Route::get('/periksa', [DokterController::class, 'periksa'])->name('periksa');
+        Route::get('/periksa/{id}/edit', [DokterController::class, 'editPeriksa'])->name('editPeriksa');
+        Route::put('/periksa/{id}', [DokterController::class, 'updatePeriksa'])->name('updatePeriksa');
+        Route::delete('/periksa/{id}', [DokterController::class, 'deletePeriksa'])->name('deletePeriksa');
+
+        Route::get('/obat', [DokterController::class, 'showObat'])->name('obat');
+        Route::post('/obat', [DokterController::class, 'createObat']);
+        Route::get('/obat/edit/{id}', [DokterController::class, 'editObat']);
+        Route::post('/obat/update/{id}', [DokterController::class, 'updateObat']);
+        Route::get('/obat/delete/{id}', [DokterController::class, 'deleteObat']);
+    });
 });

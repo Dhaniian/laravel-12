@@ -2,44 +2,75 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Auth\Events\Validated;
 use Illuminate\Http\Request;
-use Illuminate\Http\RedirectResponse;
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+
 
 class AuthController extends Controller
 {
-
-    public function form()
+    public function Login(Request $request)
     {
-        return view('layouts.login');
-    }
-
-    public function authenticate(Request $request): RedirectResponse
-    {
-        $credentials = $request->validate([
-            'email' => ['required', 'email'],
-            'password' => ['required'],
+        $request->validate([
+            'email' => 'required|email',
+            'password' => 'required|min:6',
+        ], [
+            'email.required' => "email can not nil",
+            'password.required' => "password can not nil"
         ]);
 
-        if (Auth::attempt($credentials)) {
-            $request->session()->regenerate();
+        //QUERY DB, VALIDATION PASS AND GET ROLE
+        $user = User::where('email', $request->email)->first();
 
-            // Arahkan berdasarkan role
-            $user = Auth::user();
+        if ($user && Hash::check($request->password, $user->password)) {
+            //SET SESSION
+            Auth::login($user);
+
+            // Mengirimkan nama pengguna untuk ditampilkan pada view setelah login
+            $username = Auth::user()->name;
+
             if ($user->role === 'dokter') {
-                return redirect()->intended('/obat');
+                return redirect()->intended('/dokter/dashboard')->with($username);
             } elseif ($user->role === 'pasien') {
-                return redirect()->intended('/dokter');
+                return redirect()->intended('/pasien/dashboard')->with($username);
+            } else {
+                return redirect()->intended('/login');
             }
 
-            // Default fallback
-            return redirect()->intended('/');
+        } else {
+            return back()->withErrors([
+                'email' => 'Email atau password yang Anda masukkan salah.',
+            ]);
         }
-
-        return back()->withErrors([
-            'email' => 'The provided credentials do not match our records.',
-        ])->onlyInput('email');
     }
+
+
+    public function register(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+            'password' => 'required|string|min:6|confirmed',
+            // Validasi lainnya
+        ]);
+
+        $user = User::create([
+            'name' => $request->name,
+            'email' => $request->email,
+            'password' => bcrypt($request->password),
+            'role' => $request->role ?? 'pasien',
+            'alamat' => $request->alamat,
+            'no_hp' => $request->no_hp,
+        ]);
+
+        Auth::login($user);
+
+        return redirect('/login');
+    }
+
+
     public function logout(Request $request)
     {
         Auth::logout();
