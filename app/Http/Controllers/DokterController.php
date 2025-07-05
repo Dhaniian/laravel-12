@@ -2,197 +2,215 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Obat;
-use App\Models\Periksa;
-use App\Models\User;
+use App\Models\daftar_poliModel;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
+use App\Models\User;
+use App\Models\periksa;
+use App\Models\dokterModel;
+use App\Models\jadwal_periksaModel;
+use App\Models\pasienModel;
+use App\Models\poliModel;
+use Illuminate\Validation\ValidationException;
 
 class DokterController extends Controller
 {
-    // Show all obat
-    public function showObat()
+    public function index()
     {
-        try {
-            $obat = Obat::all();
-            return view('dokter.obat', compact('obat'));
-        } catch (\Exception $e) {
-            Log::error("Error fetching obat: " . $e->getMessage());
-            return redirect()->back()->with('error', 'Terjadi kesalahan saat mengambil data obat.');
-        }
+        $dokters = User::where('role', 'dokter')->get();
+        return view('layouts.dashboard', compact('dokters'));
     }
-
-    // Create new obat
-    public function createObat(Request $request)
+    public function byDokter(Request $request)
     {
-        try {
-            // Validate input data
-            $validatedData = $request->validate([
-                'nama_obat' => 'required|string|max:255',
-                'kemasan' => 'required|string|max:255',
-                'harga' => 'required|numeric|min:1',
-            ]);
+        // Ambil semua user dengan role dokter (untuk dropdown)
+        $dokters = User::where('role', 'dokter')->get();
 
-            // Create new obat and save
-            $obat = new Obat();
-            $obat->nama_obat = $request->input('nama_obat');
-            $obat->kemasan = $request->input('kemasan');
-            $obat->harga = $request->input('harga');
-            $obat->save();
+        // Ambil data pasien dari user yang login
+        $pasien = pasienModel::where('user_id', auth()->id())->first();
 
-            return redirect()->route('dokter.obat')->with('success', 'Obat berhasil ditambahkan');
-        } catch (\Exception $e) {
-            Log::error("Error creating obat: " . $e->getMessage());
-            return redirect()->back()->with('error', 'Terjadi kesalahan saat menambahkan obat.');
-        }
-    }
-
-    // Update existing obat
-    public function editObat($id)
-    {
-        try {
-            $obat = Obat::findOrFail($id);
-            return view('dokter.obatEdit', compact('obat'));
-        } catch (\Exception $e) {
-            Log::error("Error fetching obat for edit: " . $e->getMessage());
-            return redirect()->back()->with('error', 'Obat tidak ditemukan.');
-        }
-    }
-
-    // Save updated obat
-    public function updateObat(Request $request, $id)
-    {
-        try {
-            // Validate input data
-            $validatedData = $request->validate([
-                'nama_obat' => 'required|string|max:255',
-                'kemasan' => 'required|string|max:255',
-                'harga' => 'required|numeric|min:1',
-            ]);
-
-            $obat = Obat::findOrFail($id);
-            $obat->nama_obat = $request->input('nama_obat');
-            $obat->kemasan = $request->input('kemasan');
-            $obat->harga = $request->input('harga');
-            $obat->save();
-
-            return redirect()->route('dokter.obat')->with('success', 'Obat berhasil diupdate');
-        } catch (\Exception $e) {
-            Log::error("Error updating obat: " . $e->getMessage());
-            return redirect()->back()->with('error', 'Terjadi kesalahan saat memperbarui obat.');
-        }
-    }
-
-    // Delete obat
-    public function deleteObat($id)
-    {
-        try {
-            $obat = Obat::findOrFail($id);
-            $obat->delete();
-
-            return redirect()->route('dokter.obat')->with('success', 'Obat berhasil dihapus');
-        } catch (\Exception $e) {
-            Log::error("Error deleting obat: " . $e->getMessage());
-            return redirect()->back()->with('error', 'Terjadi kesalahan saat menghapus obat.');
-        }
-    }
-
-    public function periksa()
-    {
-        // Get the ID of the currently logged-in doctor
-        $id_dokter = auth()->user()->id;
-
-        // Fetch only the examinations associated with this doctor
-        $periksas = Periksa::with(['pasien', 'dokter','obat'])
-            ->where('id_dokter', $id_dokter)
+        // Ambil riwayat periksa untuk ditampilkan
+        $periksas = Periksa::with('dokter', 'pasien', 'daftarPoli.jadwal.poli')
+            ->where('id_pasien', $pasien->id)
             ->get();
 
-        return view('dokter.periksa', compact('periksas'));
-    }
+        // Jika ada pengiriman form
+        if ($request->isMethod('post')) {
+            $request->validate([
+                'id_dokter' => 'required|exists:users,id',
+                'no_antrean' => 'required|string',
+                'keluhan' => 'required|string'
+            ]);
 
-    public function editPeriksa($id)
-    {
-        // Ambil data pemeriksaan berdasarkan ID
-        $periksa = Periksa::with(['pasien', 'dokter', 'obat'])->findOrFail($id);
+            // Ambil daftar_poli berdasarkan pasien & nomor antrean
+            $daftarList = daftar_poliModel::with('jadwal.dokter', 'jadwal.poli')
+                ->where('id_pasien', $pasien->id)
+                ->where('no_antrean', $request->no_antrean)
+                ->get();
 
-        // Pastikan dokter yang login hanya bisa mengedit pemeriksaan miliknya
-        if ($periksa->id_dokter !== auth()->user()->id) {
-            return redirect()->route('dokter.periksa')->with('error', 'Unauthorized access.');
+            if ($daftarList->isEmpty()) {
+                return redirect()->back()->with('error', 'Nomor antrean tidak ditemukan. Jika belum mendaftar silakan daftar terlebih dahulu!');
+            }
+
+            $valid = false;
+
+            foreach ($daftarList as $daftar) {
+                $jadwal = $daftar->jadwal;
+
+                if (!$jadwal || !$jadwal->dokter) {
+                    continue; // Skip kalau tidak ada jadwal atau dokter
+                }
+
+                // Pastikan dokter yang dipilih user cocok dengan dokter dari jadwal tersebut
+                if ($jadwal->dokter->user_id == $request->id_dokter) {
+                    // Cek apakah sudah ada pemeriksaan untuk nomor antrean ini
+                    $sudahAda = Periksa::where('id_daftar', $daftar->id)->exists();
+                    if ($sudahAda) {
+                        return redirect()->back()->with('error', 'Anda sudah mendaftar pemeriksaan dengan nomor antrean ini.');
+                    }
+
+                    // Simpan data pemeriksaan
+                    Periksa::create([
+                        'id_pasien' => $pasien->id,
+                        'id_dokter' => $request->id_dokter,
+                        'tgl_periksa' => $request->tgl_periksa ?? now(),
+                        'catatan' => $request->catatan ?? 'belum ada catatan',
+                        'biaya_periksa' => $request->biaya_periksa !== 'belum ada biaya periksa' ? $request->biaya_periksa : null,
+                        'id_daftar' => $daftar->id,
+                        'status' => 'Menunggu',
+                        'keluhan' => $request->keluhan ?? 'belum ada keluhan',
+                    ]);
+
+                    $valid = true;
+                    break;
+                }
+            }
+
+            if (!$valid) {
+                return redirect()->back()->with('error', 'Dokter yang dipilih tidak sesuai dengan jadwal dari nomor antrean Anda.');
+            }
+
+            return redirect()->route('periksa.byDokter')->with('success', 'Berhasil memilih Dokter. Silakan masuk ke ruang periksa.');
         }
 
-        // Ambil daftar obat untuk dropdown
-        $obatList = Obat::all();
+        // Ambil semua daftar_poli milik pasien untuk ditampilkan di tabel riwayat
+        $daftars = daftar_poliModel::with('jadwal.poli')
+            ->where('id_pasien', $pasien->id)
+            ->get();
 
-        // Ambil daftar pasien untuk dropdown
-        $pasienList = User::where('role', 'pasien')->get();
-
-        // Tampilkan halaman edit dengan data pemeriksaan, daftar obat, dan daftar pasien
-        return view('dokter.editPeriksa', compact('periksa', 'pasienList', 'obatList'));
+        return view('layouts.list_dokter', compact('dokters', 'periksas', 'daftars'));
     }
 
-    public function updatePeriksa(Request $request, $id)
+
+
+    public function jadwaldokter()
     {
-        // Validasi input
+        $dokter = dokterModel::where('user_id', auth()->id())->first();
+        // Pastikan dokter ditemukan
+        if (!$dokter) {
+            return back()->with('error', 'Akun ini belum terdaftar sebagai dokter.');
+        }
+        $jadwal = jadwal_periksaModel::with('dokter.user')->where('id_dokter', $dokter->id)->get();
+        return view('layouts.jadwal_dokter', compact('jadwal'));
+    }
+    public function tambahjadwaldokter()
+    {
+        $dokter = dokterModel::where('user_id', auth()->id())->first();
+        // Pastikan dokter ditemukan
+        if (!$dokter) {
+            return back()->with('error', 'Akun ini belum terdaftar sebagai dokter.');
+        }
+
+        $poli = poliModel::all();
+        return view('layouts.tambah_jadwal_dokter', compact('dokter', 'poli'));
+    }
+
+    public function storejadwaldokter(Request $request)
+    {
         $request->validate([
-            'id_pasien' => 'required|exists:users,id',
-            'tgl_periksa' => 'required|date',
-            'catatan' => 'nullable|string',
-            'biaya_periksa' => 'required|numeric',
-            'obat' => 'required|array',  // Memastikan obat dipilih
-            'obat.*' => 'exists:obats,id',  // Memastikan setiap obat yang dipilih ada di database
+            'id_dokter' => 'required',
+            'hari' => 'required',
+            'jam_mulai' => 'required',
+            'jam_selesai' => 'required',
+            'status_aktif' => 'required',
+            'id_poli' => 'required',
+        ]);
+        $dokter = dokterModel::where('user_id', auth()->id())->first();
+
+        if (!$dokter) {
+            return back()->with('error', 'Akun ini belum terdaftar sebagai dokter.');
+        }
+        // Cek apakah jadwal yang sama sudah ada
+        $jadwalSudahAda = jadwal_periksaModel::where('id_dokter', $request->id_dokter)
+            ->where('id_poli', $request->id_poli)
+            ->where('hari', $request->hari)
+            ->where('jam_mulai', $request->jam_mulai)
+            ->where('jam_selesai', $request->jam_selesai)
+            ->exists();
+
+        if ($jadwalSudahAda) {
+            throw ValidationException::withMessages([
+                'id_dokter' => 'Dokter sudah memiliki jadwal di poli dan waktu yang sama.',
+            ]);
+        }
+        jadwal_periksaModel::create([
+            'id_dokter' => $dokter->id,
+            'id_poli' => $request->id_poli,
+            'hari' => $request->hari,
+            'jam_mulai' => $request->jam_mulai,
+            'jam_selesai' => $request->jam_selesai,
+            'status_aktif' => $request->status_aktif,
+
+        ]);
+        return redirect()->route('jadwl.dokter')->with('success', 'Data Berhsail Ditambahkan');
+    }
+
+    public function editjadwaldokter($id)
+    {
+        $poli = jadwal_periksaModel::with('dokter.user', 'poli')->findOrFail($id);
+        $dokters = dokterModel::with('user')->where('user_id', auth()->id())->firstOrFail();
+        $polis = poliModel::all();
+        return view('layouts.edit_jadwal_dokter', compact('poli', 'dokters', 'polis'));
+    }
+
+    public function updatejadwaldokter(Request $request, $id)
+    {
+        $request->validate([
+            'id_poli' => 'required',
+            'hari' => 'required',
+            'jam_mulai' => 'required',
+            'jam_selesai' => 'required',
+            'status_aktif' => 'required',
+        ]);
+        $dokter = jadwal_periksaModel::findOrFail($id);
+        $dokter->update([
+            'hari' => $request->hari,
+            'jam_mulai' => $request->jam_mulai,
+            'jam_selesai' => $request->jam_selesai,
+            'status_aktif' => $request->status_aktif,
         ]);
 
-        // Ambil data pemeriksaan
-        $periksa = Periksa::findOrFail($id);
+        return redirect()->route('jadwl.dokter')->with('success', 'Data Berhasil Diupdate');
+    }
 
-        // Pastikan dokter yang login hanya bisa mengedit pemeriksaan miliknya
-        if ($periksa->id_dokter !== auth()->user()->id) {
-            return redirect()->route('dokter.periksa')->with('error', 'Unauthorized access.');
+    public function riwayatpasien()
+    {
+        $dokter = dokterModel::where('user_id', auth()->id())->first();
+
+        if (!$dokter) {
+            return back()->with('error', 'Akun ini belum terdaftar sebagai dokter.');
         }
 
-        // Update data pemeriksaan
-        $periksa->update([
-            'id_pasien' => $request->id_pasien,
-            'tgl_periksa' => $request->tgl_periksa,
-            'catatan' => $request->catatan,
-            'biaya_periksa' => $request->biaya_periksa,
-        ]);
+        // Ambil semua periksa yang ID dokter-nya sesuai dari relasi jadwal
+        $riwayat = Periksa::with([
+            'detailPeriksa.obat',
+            'pasienModels.user',
+            'daftarPoli.jadwal'
+        ])
+            ->whereHas('daftarPoli.jadwal', function ($query) use ($dokter) {
+                $query->where('id_dokter', $dokter->id);
+            })
+            ->where('status', 'sudah diperiksa')
+            ->get();
 
-        // Menyimpan relasi obat yang dipilih
-        $periksa->obat()->sync($request->obat);
-
-        return redirect()->route('dokter.periksa')->with('success', 'Pemeriksaan berhasil diperbarui.');
+        return view('layouts.riwayat_periksa_pasien', compact('riwayat'));
     }
-
-
-
-    public function deletePeriksa($id)
-    {
-        // Get the examination to delete
-        $periksa = Periksa::findOrFail($id);
-
-        // Ensure the doctor is authorized to delete the examination
-        if ($periksa->id_dokter !== auth()->user()->id) {
-            return redirect()->route('dokter.periksa')->with('error', 'Unauthorized access.');
-        }
-
-        // Delete the examination
-        $periksa->delete();
-
-        return redirect()->route('dokter.periksa')->with('success', 'Examination deleted successfully.');
-    }
-
-    public function dokterDashboard()
-    {
-        $totalObat = Obat::count();
-        $totalPeriksa = Periksa::where('id_dokter', auth()->user()->id)->count();
-        $totalDokter =User::where('role', 'dokter')->count();
-        $totalPelangan =User::where('role', 'pasien')->count();
-
-        return view('dokter.dashboard', compact('totalObat', 'totalPeriksa','totalDokter','totalPelangan'));
-    }
-
 }
-
-
-/////////dss

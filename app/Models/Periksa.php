@@ -2,50 +2,69 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
-class Periksa extends Model
+class periksa extends Model
 {
+    protected $table = 'periksas';
 
-    use HasFactory;
-
-    protected $table = "periksas";
 
     protected $fillable = [
         'id_pasien',
         'id_dokter',
         'tgl_periksa',
         'catatan',
-        'biaya_periksa'
+        'totalHarga',
+        'biaya_periksa',
+        'status',
+        'id_daftar',
+        'total_obat',
+        'keluhan',
+        'waktu_diperiksa'
     ];
 
-    //RELATION TO USER
-    public function pasien()
+    //menggunakan belongs to karena merupakan child atau anak,dimana id_dokter,dan id_pasien mempunyai relasi ke id users
+    //relasi ke user sebagai dokter
+
+    protected function casts(): array
     {
-        return $this->belongsTo(User::class, 'id_pasien');
+        return [
+            'tgl_periksa' => 'date',
+            'total_harga' => 'float',
+            'biaya_periksa' => 'float',
+            'total_obat' => 'integer',
+        ];
     }
 
-    //RELATION TO USER
-    public function dokter()
+    public function dokter(): BelongsTo
     {
         return $this->belongsTo(User::class, 'id_dokter');
     }
 
-    public function getTglPeriksaAttribute($value)
+    //relasi ke user sebagai pasien
+    public function pasien(): BelongsTo
     {
-        return \Carbon\Carbon::parse($value)->format('d M Y H:i');
+        return $this->belongsTo(User::class, 'id_pasien');
     }
 
-    public function obat()
+    public function detailPeriksa(): HasMany
     {
-        return $this->belongsToMany(Obat::class, 'detail_periksas', 'id_periksa', 'id_obat');
+        return $this->hasMany(DetailPeriksa::class, 'id_periksa');
+    }
+    public function obats(): BelongsToMany
+    {
+        return $this->belongsToMany(Obat::class, 'obat_periksa', 'periksa_id', 'obat_id');
+    }
+    public function daftarPoli()
+    {
+        return $this->belongsTo(daftar_poliModel::class, 'id_daftar');
     }
 
-    public static function getPeriksaByDokterId($dokterId)
+    public function pasienModels()
     {
-        return self::where('id_dokter', $dokterId)
-            ->with(['dokter', 'pasien'])  // Eager load the 'dokter' and 'pasien' relations
-            ->get();
+        return $this->belongsTo(pasienModel::class, 'id_pasien');
     }
 }
